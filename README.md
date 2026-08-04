@@ -8,6 +8,7 @@ When enabled, Calm:
 - hides textual call/result rows for built-in and custom tools;
 - keeps image results visible without their surrounding tool shell;
 - uses one native spinner row: `⠙ Thinking...` for model work and `⠧ Working: read...` for tool execution;
+- hides Blackhole observer/reflector/dropper running notices and post-compaction stats while preserving warnings, errors, and manual memory output;
 - restores the complete stock transcript for `/export` and `/share`.
 
 Calm is off by default. Run `/calm` to toggle it. The preference is stored as `on` or `off` in `~/.pi/agent/calm` with owner-only permissions.
