@@ -23,8 +23,9 @@ type CalmToolShellPatch = {
 
 // Use a new key so /reload installs the active-line policy even when an older
 // Calm patch is still resident in the current Pi process.
-const CALM_TOOL_SHELL_PATCH = Symbol.for("pi-calm:tool-shell-layout:active-line:v2");
+const CALM_TOOL_SHELL_PATCH = Symbol.for("pi-calm:tool-shell-layout:nonblank:v3");
 const SUPERSEDED_TOOL_SHELL_PATCHES = [
+  Symbol.for("pi-calm:tool-shell-layout:active-line:v2"),
   Symbol.for("pi-calm:tool-shell-layout:all-tools:v1"),
   Symbol.for("pi-calm:built-in-tool-shell-layout:pi-0.82.0"),
 ];
@@ -59,7 +60,9 @@ export function installCalmToolShellLayout(): void {
 
     const state = this as unknown as ToolRowPresentationState;
     if (state.isPartial) {
-      const activeLine = originalRender.call(this, width).find((line) => visibleWidth(line) > 0);
+      const activeLine = originalRender
+        .call(this, width)
+        .find((line) => visibleWidth(line.replace(/\s/g, "")) > 0);
       return activeLine ? [activeLine] : [];
     }
 

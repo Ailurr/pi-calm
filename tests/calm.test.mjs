@@ -8,18 +8,18 @@ import { pathToFileURL } from "node:url";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const STOCK_TOOL_LINES = [
-  "",
+  "\u001b[48;2;40;40;40m                    \u001b[0m",
   "\u001b[36mfetch_content https://example.com\u001b[0m",
   "partial response body",
 ];
 
-test("Calm shows one active tool line, then hides the completed row", { concurrency: false }, async () => {
+test("Calm skips styled padding, shows active text, then hides the completed row", { concurrency: false }, async () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
   const originalToolRender = ToolExecutionComponent.prototype.render;
-  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:all-tools:v1");
-  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:active-line:v2");
+  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:active-line:v2");
+  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:nonblank:v3");
   const supersededPatch = { hidesShell: () => true };
   globalThis[supersededPatchKey] = supersededPatch;
   ToolExecutionComponent.prototype.render = () =>
