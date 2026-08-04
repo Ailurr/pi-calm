@@ -13,13 +13,13 @@ const STOCK_TOOL_LINES = [
   "partial response body",
 ];
 
-test("Calm skips styled padding, shows active text, then hides the completed row", { concurrency: false }, async () => {
+test("Calm uses one dynamic working row and hides textual tool rows", { concurrency: false }, async () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
   const originalToolRender = ToolExecutionComponent.prototype.render;
-  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:active-line:v2");
-  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:nonblank:v3");
+  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:nonblank:v3");
+  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:working-row:v4");
   const supersededPatch = { hidesShell: () => true };
   globalThis[supersededPatchKey] = supersededPatch;
   ToolExecutionComponent.prototype.render = () =>
@@ -46,7 +46,10 @@ test("Calm skips styled padding, shows active text, then hides the completed row
     assert.ok(calmCommand);
     assert.ok(handlers.has("session_start"));
     assert.ok(handlers.has("session_shutdown"));
-    assert.equal(handlers.has("agent_start"), false);
+    assert.ok(handlers.has("agent_start"));
+    assert.ok(handlers.has("agent_end"));
+    assert.ok(handlers.has("tool_execution_start"));
+    assert.ok(handlers.has("tool_execution_end"));
     assert.equal(handlers.has("agent_settled"), false);
 
     const calls = [];
@@ -63,35 +66,49 @@ test("Calm skips styled padding, shows active text, then hides the completed row
       setWorkingVisible(value) { calls.push(["visible", value]); },
     };
     const ctx = { ui };
-    const fire = async (event) => {
-      for (const handler of handlers.get(event) ?? []) await handler({}, ctx);
+    const fire = async (event, payload = {}) => {
+      for (const handler of handlers.get(event) ?? []) {
+        await handler({ type: event, ...payload }, ctx);
+      }
     };
 
     await fire("session_start");
     const customToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
-      isPartial: true,
       imageComponents: [],
       imageSpacers: [],
     });
-    assert.deepEqual(customToolRow.render(80), [STOCK_TOOL_LINES[1]]);
-    customToolRow.isPartial = false;
     assert.deepEqual(customToolRow.render(80), []);
 
     const imageToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
-      isPartial: false,
       imageComponents: [{ render: () => ["rendered image"] }],
       imageSpacers: [],
     });
     assert.deepEqual(imageToolRow.render(80), ["rendered image"]);
     const indicator = calls.findLast(([name]) => name === "indicator")?.[1];
     assert.deepEqual(indicator, { frames: SPINNER_FRAMES, intervalMs: 80 });
-    assert.ok(calls.some(([name, value]) => name === "message" && value === "Working..."));
+    assert.ok(calls.some(([name, value]) => name === "message" && value === "Thinking..."));
+
     assert.ok(calls.some(([name, value]) => name === "visible" && value === true));
     assert.equal(calls.some(([name]) => name === "widget"), false);
+    calls.length = 0;
+    await fire("agent_start");
+    assert.equal(calls.findLast(([name]) => name === "message")?.[1], "Thinking...");
+    await fire("tool_execution_start", { toolCallId: "read-1", toolName: "read", args: {} });
+    assert.equal(calls.findLast(([name]) => name === "message")?.[1], "Working: read...");
+    await fire("tool_execution_start", {
+      toolCallId: "bash-1",
+      toolName: "bash",
+      args: { command: "cd /tmp/project && npm test" },
+    });
+    assert.equal(calls.findLast(([name]) => name === "message")?.[1], "Working: bash...");
+    await fire("tool_execution_end", { toolCallId: "bash-1", toolName: "bash", result: {}, isError: false });
+    assert.equal(calls.findLast(([name]) => name === "message")?.[1], "Working: read...");
+    await fire("tool_execution_end", { toolCallId: "read-1", toolName: "read", result: {}, isError: false });
+    assert.equal(calls.findLast(([name]) => name === "message")?.[1], "Thinking...");
 
     calls.length = 0;
     await calmCommand.handler("", ctx);

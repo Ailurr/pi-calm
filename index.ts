@@ -9,8 +9,8 @@
 // setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The
 // presentation adapters probe the exact Pi APIs they patch and degrade
 // independently with one clear diagnostic if a future Pi removes one. The
-// shared tool-row adapter shows one stock summary line while a tool is active,
-// then removes its textual row when execution settles.
+// tool-row adapter hides textual tool output; the native working row reports
+// Thinking... or Working: <tool>... from lifecycle events.
 //
 // Calm changes presentation only. It never intercepts, transforms, reroutes,
 // removes, or reorders semantic input, tool execution, model context, session
@@ -48,9 +48,16 @@ export default function (pi: ExtensionAPI) {
 
   let removeTerminalInputHandler: (() => void) | undefined;
 
-  // Pi owns animation timing and visibility for its single-line working row. Calm
-  // only selects a compact indicator while active, so it creates no widgets,
-  // timers, width-dependent geometry, or agent-run lifecycle state.
+  const activeTools = new Map<string, string>();
+
+  const updateWorkingMessage = (ui: ExtensionUIContext): void => {
+    if (!calmPresentationIsActive()) return;
+    const currentTool = Array.from(activeTools.values()).at(-1);
+    ui.setWorkingMessage(currentTool ? `Working: ${currentTool}...` : "Thinking...");
+  };
+
+  // Pi owns animation timing and row visibility. Calm only selects the compact
+  // indicator and updates its message from Pi's agent/tool lifecycle events.
   const applyWorkingPresentation = (ui: ExtensionUIContext): void => {
     ui.setWorkingVisible(true);
     if (calmPresentationIsActive()) {
@@ -58,7 +65,7 @@ export default function (pi: ExtensionAPI) {
         frames: CALM_WORKING_FRAMES,
         intervalMs: CALM_WORKING_INTERVAL_MS,
       });
-      ui.setWorkingMessage("Working...");
+      updateWorkingMessage(ui);
       return;
     }
 
@@ -66,7 +73,29 @@ export default function (pi: ExtensionAPI) {
     ui.setWorkingMessage();
   };
 
+  pi.on("agent_start", (_event, ctx) => {
+    activeTools.clear();
+    updateWorkingMessage(ctx.ui);
+  });
+
+  pi.on("tool_execution_start", (event, ctx) => {
+    activeTools.delete(event.toolCallId);
+    activeTools.set(event.toolCallId, event.toolName);
+    updateWorkingMessage(ctx.ui);
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    activeTools.delete(event.toolCallId);
+    updateWorkingMessage(ctx.ui);
+  });
+
+  pi.on("agent_end", (_event, ctx) => {
+    activeTools.clear();
+    updateWorkingMessage(ctx.ui);
+  });
+
   pi.on("session_start", (_event, ctx) => {
+    activeTools.clear();
     setCalmPresentation(loadCalmPreference());
     setCalmStockExportRendering(false);
     applyWorkingPresentation(ctx.ui);
@@ -99,6 +128,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    activeTools.clear();
     removeTerminalInputHandler?.();
     removeTerminalInputHandler = undefined;
     ctx.ui.setWorkingIndicator();
