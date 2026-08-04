@@ -19,20 +19,15 @@ export function setCalmPresentation(next: boolean): void {
   active = next;
 }
 
-/** True while an /export or /share render is in flight and stock output is required. */
-export function calmStockExportRenderingIsActive(): boolean {
-  return stockExportRendering;
-}
 
 export function setCalmStockExportRendering(next: boolean): void {
   stockExportRendering = next;
 }
 
 /**
- * True while Calm should hide the supported transcript chrome: collapsed
- * thinking labels and the known Pi built-in tool call/result shells. Genuine
- * user prompts, assistant text, custom tools, and every other transcript row
- * class are never filtered by this flag.
+ * True while Calm should hide presentation-only transcript chrome. User
+ * prompts, assistant text, session data, and export/share rendering are never
+ * filtered by this flag.
  */
 export function calmHidesTranscriptChrome(): boolean {
   return active && !stockExportRendering;

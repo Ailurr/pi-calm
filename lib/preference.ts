@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as PiCodingAgent from "@earendil-works/pi-coding-agent";
 
-export const CALM_PREFERENCE_FILE_NAME = "calm";
+const CALM_PREFERENCE_FILE_NAME = "calm";
 
 /**
  * Resolve Pi's agent directory through Pi's exported getAgentDir(), which
@@ -29,14 +29,14 @@ export const CALM_PREFERENCE_FILE_NAME = "calm";
  * exporting it, fall back to the documented environment variable and default
  * path instead of failing.
  */
-export function calmAgentDir(): string {
+function calmAgentDir(): string {
   if (typeof PiCodingAgent.getAgentDir === "function") return PiCodingAgent.getAgentDir();
   const envDir = process.env.PI_CODING_AGENT_DIR?.trim();
   if (envDir) return envDir;
   return join(homedir(), ".pi", "agent");
 }
 
-export function calmPreferencePath(): string {
+function calmPreferencePath(): string {
   return join(calmAgentDir(), CALM_PREFERENCE_FILE_NAME);
 }
 
