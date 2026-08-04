@@ -9,15 +9,8 @@
 // setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The
 // presentation adapters probe the exact Pi APIs they patch and degrade
 // independently with one clear diagnostic if a future Pi removes one. The
-// shared tool-row adapter hides all textual tool call/result rows while Calm is
-// active, regardless of whether Pi or an extension registered the tool.
-// presentation adapter probes the exact public API seam it patches and degrades
-// below) if a future Pi removes it. The shared tool-row adapter hides all
-// textual tool call/result rows while Calm is active, regardless of whether Pi
-// or an extension registered the tool.
-// below) if a future Pi removes it. The shared tool-row adapter is limited to
-// Pi's seven known built-in names, so generic custom tools and unsupported
-// transcript classes deliberately stay visible.
+// shared tool-row adapter shows one stock summary line while a tool is active,
+// then removes its textual row when execution settles.
 //
 // Calm changes presentation only. It never intercepts, transforms, reroutes,
 // removes, or reorders semantic input, tool execution, model context, session
