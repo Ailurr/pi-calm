@@ -7,13 +7,23 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const STOCK_TOOL_LINES = [
+  "",
+  "\u001b[36mfetch_content https://example.com\u001b[0m",
+  "partial response body",
+];
 
-test("Calm hides every textual tool row and restores stock presentation", { concurrency: false }, async () => {
+test("Calm shows one active tool line, then hides the completed row", { concurrency: false }, async () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
   const originalToolRender = ToolExecutionComponent.prototype.render;
-  ToolExecutionComponent.prototype.render = () => ["stock tool output"];
+  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:all-tools:v1");
+  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:active-line:v2");
+  const supersededPatch = { hidesShell: () => true };
+  globalThis[supersededPatchKey] = supersededPatch;
+  ToolExecutionComponent.prototype.render = () =>
+    supersededPatch.hidesShell() ? [] : STOCK_TOOL_LINES;
 
   try {
     const extensionUrl = new URL(`../index.ts?test=${Date.now()}`, import.meta.url);
@@ -61,14 +71,18 @@ test("Calm hides every textual tool row and restores stock presentation", { conc
     const customToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
+      isPartial: true,
       imageComponents: [],
       imageSpacers: [],
     });
+    assert.deepEqual(customToolRow.render(80), [STOCK_TOOL_LINES[1]]);
+    customToolRow.isPartial = false;
     assert.deepEqual(customToolRow.render(80), []);
 
     const imageToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
+      isPartial: false,
       imageComponents: [{ render: () => ["rendered image"] }],
       imageSpacers: [],
     });
@@ -84,7 +98,7 @@ test("Calm hides every textual tool row and restores stock presentation", { conc
     assert.equal(expanded, true);
     assert.ok(calls.some(([name, value]) => name === "indicator" && value === undefined));
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
-    assert.deepEqual(customToolRow.render(80), ["stock tool output"]);
+    assert.deepEqual(customToolRow.render(80), STOCK_TOOL_LINES);
 
     calls.length = 0;
     await fire("session_shutdown");
@@ -93,6 +107,8 @@ test("Calm hides every textual tool row and restores stock presentation", { conc
     assert.equal(calls.some(([name]) => name === "widget"), false);
   } finally {
     ToolExecutionComponent.prototype.render = originalToolRender;
+    delete globalThis[supersededPatchKey];
+    delete globalThis[activePatchKey];
     rmSync(agentDir, { recursive: true, force: true });
     delete process.env.PI_CODING_AGENT_DIR;
   }
