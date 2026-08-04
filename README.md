@@ -5,8 +5,8 @@ Pi Calm is a presentation-only extension for [Pi](https://github.com/earendil-wo
 When enabled, Calm:
 
 - hides collapsed-thinking labels while preserving expandable reasoning;
-- hides the call/result shells of Pi's seven built-in tools;
-- leaves custom tools and unsupported transcript rows untouched;
+- hides textual call/result rows for built-in and custom tools;
+- keeps image results visible without their surrounding tool shell;
 - shows a compact one-line Braille spinner: `⠹ Working...`;
 - restores the complete stock transcript for `/export` and `/share`.
 
