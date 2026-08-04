@@ -9,7 +9,8 @@
 // setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The
 // presentation adapters probe the exact Pi APIs they patch and degrade
 // independently with one clear diagnostic if a future Pi removes one. The
-// tool-row adapter hides textual tool output; the native working row reports
+// notification adapter hides known Blackhole progress summaries, the tool-row
+// adapter hides textual tool output, and the native working row reports
 // Thinking... or Working: <tool>... from lifecycle events.
 //
 // Calm changes presentation only. It never intercepts, transforms, reroutes,
@@ -19,6 +20,7 @@
 import { type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { installCalmToolShellLayout } from "./lib/tool-shells.ts";
+import { installCalmNotificationLayout } from "./lib/notifications.ts";
 import { installCalmCollapsedThinkingLayout } from "./lib/collapsed-thinking.ts";
 import { loadCalmPreference, persistCalmPreference } from "./lib/preference.ts";
 import {
@@ -45,6 +47,7 @@ function installCalmPresentationAdapter(name: string, install: () => void): void
 export default function (pi: ExtensionAPI) {
   installCalmPresentationAdapter("collapsed-thinking", installCalmCollapsedThinkingLayout);
   installCalmPresentationAdapter("tool-shells", installCalmToolShellLayout);
+  installCalmPresentationAdapter("notifications", installCalmNotificationLayout);
 
   let removeTerminalInputHandler: (() => void) | undefined;
 

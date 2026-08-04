@@ -1,4 +1,4 @@
-import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,12 +13,14 @@ const STOCK_TOOL_LINES = [
   "partial response body",
 ];
 
-test("Calm uses one dynamic working row and hides textual tool rows", { concurrency: false }, async () => {
+test("Calm uses one dynamic working row and hides presentation noise", { concurrency: false }, async () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
   const originalToolRender = ToolExecutionComponent.prototype.render;
   const activePatchKey = Symbol.for("pi-calm:tool-row:v5");
+  const notificationPatchKey = Symbol.for("pi-calm:extension-notify:v1");
+  const originalNotification = InteractiveMode.prototype.showExtensionNotify;
   ToolExecutionComponent.prototype.render = () => STOCK_TOOL_LINES;
 
   try {
@@ -39,6 +41,10 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     };
 
     extension.default(pi);
+    const installedNotification = InteractiveMode.prototype.showExtensionNotify;
+    const notifications = await import(new URL("../lib/notifications.ts", import.meta.url).href);
+    notifications.installCalmNotificationLayout();
+    assert.equal(InteractiveMode.prototype.showExtensionNotify, installedNotification);
     const installedRender = ToolExecutionComponent.prototype.render;
     const toolRows = await import(new URL("../lib/tool-shells.ts", import.meta.url).href);
     toolRows.installCalmToolShellLayout();
@@ -65,6 +71,14 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
       setWorkingMessage(value) { calls.push(["message", value]); },
       setWorkingVisible(value) { calls.push(["visible", value]); },
     };
+    const notificationCalls = [];
+    const notificationHost = {
+      showError(message) { notificationCalls.push(["error", message]); },
+      showStatus(message) { notificationCalls.push(["info", message]); },
+      showWarning(message) { notificationCalls.push(["warning", message]); },
+    };
+    const notify = (message, type = "info") =>
+      InteractiveMode.prototype.showExtensionNotify.call(notificationHost, message, type);
     const ctx = { ui };
     const fire = async (event, payload = {}) => {
       for (const handler of handlers.get(event) ?? []) {
@@ -73,6 +87,17 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     };
 
     await fire("session_start");
+    notify("Observational memory: observer running on ~22,242-token chunk (of 21,216 accumulated)");
+    notify("Observational memory: reflector running (~40,000 tokens accumulated, ~30,000-token input)");
+    notify("Observational memory: dropper running (~40,000 tokens accumulated, ~30,000-token input)");
+    notify("blackhole: 239 source entries processed; tail kept 0/1 user turns; compact-all (~0 tok).");
+    assert.deepEqual(notificationCalls, []);
+    notify("Observational memory: 4 observations recorded");
+    notify("Observational memory: observer running on a chunk", "warning");
+    assert.deepEqual(notificationCalls, [
+      ["info", "Observational memory: 4 observations recorded"],
+      ["warning", "Observational memory: observer running on a chunk"],
+    ]);
     const customToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
@@ -116,6 +141,13 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     assert.ok(calls.some(([name, value]) => name === "indicator" && value === undefined));
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
     assert.deepEqual(customToolRow.render(80), STOCK_TOOL_LINES);
+    notificationCalls.length = 0;
+    notify("Observational memory: observer running on ~1-token chunk (of 1 accumulated)");
+    notify("blackhole: 1 source entries processed; tail kept 0/1 user turns; compact-all (~0 tok).");
+    assert.deepEqual(notificationCalls, [
+      ["info", "Observational memory: observer running on ~1-token chunk (of 1 accumulated)"],
+      ["info", "blackhole: 1 source entries processed; tail kept 0/1 user turns; compact-all (~0 tok)."],
+    ]);
 
     calls.length = 0;
     await fire("session_shutdown");
@@ -124,7 +156,9 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     assert.equal(calls.some(([name]) => name === "widget"), false);
   } finally {
     ToolExecutionComponent.prototype.render = originalToolRender;
+    InteractiveMode.prototype.showExtensionNotify = originalNotification;
     delete globalThis[activePatchKey];
+    delete globalThis[notificationPatchKey];
     rmSync(agentDir, { recursive: true, force: true });
     delete process.env.PI_CODING_AGENT_DIR;
   }
