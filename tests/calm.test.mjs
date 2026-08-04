@@ -1,3 +1,4 @@
+import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,10 +8,12 @@ import { pathToFileURL } from "node:url";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-test("Calm uses Pi's compact working row and restores stock presentation", { concurrency: false }, async () => {
+test("Calm hides every textual tool row and restores stock presentation", { concurrency: false }, async () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
+  const originalToolRender = ToolExecutionComponent.prototype.render;
+  ToolExecutionComponent.prototype.render = () => ["stock tool output"];
 
   try {
     const extensionUrl = new URL(`../index.ts?test=${Date.now()}`, import.meta.url);
@@ -55,6 +58,21 @@ test("Calm uses Pi's compact working row and restores stock presentation", { con
     };
 
     await fire("session_start");
+    const customToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
+      toolName: "fetch_content",
+      toolDefinition: {},
+      imageComponents: [],
+      imageSpacers: [],
+    });
+    assert.deepEqual(customToolRow.render(80), []);
+
+    const imageToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
+      toolName: "fetch_content",
+      toolDefinition: {},
+      imageComponents: [{ render: () => ["rendered image"] }],
+      imageSpacers: [],
+    });
+    assert.deepEqual(imageToolRow.render(80), ["rendered image"]);
     const indicator = calls.findLast(([name]) => name === "indicator")?.[1];
     assert.deepEqual(indicator, { frames: SPINNER_FRAMES, intervalMs: 80 });
     assert.ok(calls.some(([name, value]) => name === "message" && value === "Working..."));
@@ -66,6 +84,7 @@ test("Calm uses Pi's compact working row and restores stock presentation", { con
     assert.equal(expanded, true);
     assert.ok(calls.some(([name, value]) => name === "indicator" && value === undefined));
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
+    assert.deepEqual(customToolRow.render(80), ["stock tool output"]);
 
     calls.length = 0;
     await fire("session_shutdown");
@@ -73,6 +92,7 @@ test("Calm uses Pi's compact working row and restores stock presentation", { con
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
     assert.equal(calls.some(([name]) => name === "widget"), false);
   } finally {
+    ToolExecutionComponent.prototype.render = originalToolRender;
     rmSync(agentDir, { recursive: true, force: true });
     delete process.env.PI_CODING_AGENT_DIR;
   }

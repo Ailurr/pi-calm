@@ -6,9 +6,15 @@
 // Verified against Pi 0.83.0, which exports its shared tool-row component,
 // session_start replacement reasons, ExtensionUIContext.setToolsExpanded(),
 // setWorkingVisible(), setWorkingIndicator(), setWorkingMessage(), and
-// setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The collapsed-thinking
+// setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The
+// presentation adapters probe the exact Pi APIs they patch and degrade
+// independently with one clear diagnostic if a future Pi removes one. The
+// shared tool-row adapter hides all textual tool call/result rows while Calm is
+// active, regardless of whether Pi or an extension registered the tool.
 // presentation adapter probes the exact public API seam it patches and degrades
-// independently with one clear diagnostic (see installCalmPresentationAdapter
+// below) if a future Pi removes it. The shared tool-row adapter hides all
+// textual tool call/result rows while Calm is active, regardless of whether Pi
+// or an extension registered the tool.
 // below) if a future Pi removes it. The shared tool-row adapter is limited to
 // Pi's seven known built-in names, so generic custom tools and unsupported
 // transcript classes deliberately stay visible.
@@ -19,7 +25,7 @@
 // transcript.
 import { type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
-import { installCalmBuiltInToolShellLayout } from "./lib/built-in-tool-shells.ts";
+import { installCalmToolShellLayout } from "./lib/tool-shells.ts";
 import { installCalmCollapsedThinkingLayout } from "./lib/collapsed-thinking.ts";
 import { loadCalmPreference, persistCalmPreference } from "./lib/preference.ts";
 import {
@@ -45,7 +51,7 @@ function installCalmPresentationAdapter(name: string, install: () => void): void
 
 export default function (pi: ExtensionAPI) {
   installCalmPresentationAdapter("collapsed-thinking", installCalmCollapsedThinkingLayout);
-  installCalmPresentationAdapter("built-in-tool-shells", installCalmBuiltInToolShellLayout);
+  installCalmPresentationAdapter("tool-shells", installCalmToolShellLayout);
 
   let removeTerminalInputHandler: (() => void) | undefined;
 
@@ -108,7 +114,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("calm", {
-    description: "Toggle Calm: hide collapsed thinking and built-in tool shells from the transcript (presentation only).",
+    description: "Toggle Calm: hide collapsed thinking and tool execution rows from the transcript (presentation only).",
     handler: async (_args, ctx) => {
       const active = !calmPresentationIsActive();
       // Persist first: if the state file cannot be written, the toggle fails
