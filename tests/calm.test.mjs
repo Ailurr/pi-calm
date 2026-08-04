@@ -18,12 +18,8 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
   const originalToolRender = ToolExecutionComponent.prototype.render;
-  const supersededPatchKey = Symbol.for("pi-calm:tool-shell-layout:nonblank:v3");
-  const activePatchKey = Symbol.for("pi-calm:tool-shell-layout:working-row:v4");
-  const supersededPatch = { hidesShell: () => true };
-  globalThis[supersededPatchKey] = supersededPatch;
-  ToolExecutionComponent.prototype.render = () =>
-    supersededPatch.hidesShell() ? [] : STOCK_TOOL_LINES;
+  const activePatchKey = Symbol.for("pi-calm:tool-row:v5");
+  ToolExecutionComponent.prototype.render = () => STOCK_TOOL_LINES;
 
   try {
     const extensionUrl = new URL(`../index.ts?test=${Date.now()}`, import.meta.url);
@@ -43,6 +39,10 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     };
 
     extension.default(pi);
+    const installedRender = ToolExecutionComponent.prototype.render;
+    const toolRows = await import(new URL("../lib/tool-shells.ts", import.meta.url).href);
+    toolRows.installCalmToolShellLayout();
+    assert.equal(ToolExecutionComponent.prototype.render, installedRender);
     assert.ok(calmCommand);
     assert.ok(handlers.has("session_start"));
     assert.ok(handlers.has("session_shutdown"));
@@ -124,7 +124,6 @@ test("Calm uses one dynamic working row and hides textual tool rows", { concurre
     assert.equal(calls.some(([name]) => name === "widget"), false);
   } finally {
     ToolExecutionComponent.prototype.render = originalToolRender;
-    delete globalThis[supersededPatchKey];
     delete globalThis[activePatchKey];
     rmSync(agentDir, { recursive: true, force: true });
     delete process.env.PI_CODING_AGENT_DIR;
