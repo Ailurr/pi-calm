@@ -9,8 +9,9 @@
 // setHiddenThinkingLabel(). ./lib/preference.ts owns the local state file. The
 // presentation adapters probe the exact Pi APIs they patch and degrade
 // independently with one clear diagnostic if a future Pi removes one. The
-// notification adapter hides known Blackhole progress summaries, the tool-row
-// adapter hides textual tool output, and the native working row reports
+// notification adapter hides known Blackhole progress summaries, the transient
+// error adapter folds provider errors that recover through automatic retry, the
+// tool-row adapter hides textual tool output, and the native working row reports
 // Thinking... or Working: <tool>... from lifecycle events.
 //
 // Calm changes presentation only. It never intercepts, transforms, reroutes,
@@ -21,6 +22,7 @@ import { type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-c
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { installCalmToolShellLayout } from "./lib/tool-shells.ts";
 import { installCalmNotificationLayout } from "./lib/notifications.ts";
+import { installCalmTransientErrorLayout } from "./lib/transient-errors.ts";
 import { installCalmCollapsedThinkingLayout } from "./lib/collapsed-thinking.ts";
 import { loadCalmPreference, persistCalmPreference } from "./lib/preference.ts";
 import {
@@ -35,12 +37,13 @@ const CALM_WORKING_INTERVAL_MS = 80;
 // Each presentation adapter probes the exact Pi API it patches. If a future Pi
 // removes that API, only the affected adapter degrades; the rest of Calm keeps
 // working.
-function installCalmPresentationAdapter(name: string, install: () => void): void {
+function installCalmPresentationAdapter<T>(name: string, install: () => T): T | undefined {
   try {
-    install();
+    return install();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error(`Pi Calm: ${name} presentation adapter unavailable, skipping. ${reason}`);
+    return undefined;
   }
 }
 
@@ -48,6 +51,10 @@ export default function (pi: ExtensionAPI) {
   installCalmPresentationAdapter("collapsed-thinking", installCalmCollapsedThinkingLayout);
   installCalmPresentationAdapter("tool-shells", installCalmToolShellLayout);
   installCalmPresentationAdapter("notifications", installCalmNotificationLayout);
+  const transientErrors = installCalmPresentationAdapter(
+    "transient-errors",
+    installCalmTransientErrorLayout,
+  );
 
   let removeTerminalInputHandler: (() => void) | undefined;
 
@@ -92,14 +99,22 @@ export default function (pi: ExtensionAPI) {
     updateWorkingMessage(ctx.ui);
   });
 
-  pi.on("agent_end", (_event, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
+    transientErrors?.recordRun(event.messages);
     activeTools.clear();
     updateWorkingMessage(ctx.ui);
+    ctx.ui.setHiddenThinkingLabel(calmPresentationIsActive() ? "" : undefined);
+  });
+
+  pi.on("agent_settled", (_event, ctx) => {
+    transientErrors?.settle();
+    ctx.ui.setHiddenThinkingLabel(calmPresentationIsActive() ? "" : undefined);
   });
 
   pi.on("session_start", (_event, ctx) => {
     activeTools.clear();
     setCalmPresentation(loadCalmPreference());
+    transientErrors?.restore(ctx.sessionManager.getBranch());
     setCalmStockExportRendering(false);
     applyWorkingPresentation(ctx.ui);
     ctx.ui.setHiddenThinkingLabel(calmPresentationIsActive() ? "" : undefined);

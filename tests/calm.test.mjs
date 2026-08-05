@@ -1,4 +1,4 @@
-import { InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,10 +17,13 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
   const agentDir = mkdtempSync(join(tmpdir(), "pi-calm-test-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(join(agentDir, "calm"), "on\n", { mode: 0o600 });
+  const originalAssistantRender = AssistantMessageComponent.prototype.render;
   const originalToolRender = ToolExecutionComponent.prototype.render;
+  const transientErrorPatchKey = Symbol.for("pi-calm:transient-assistant-errors:v1");
   const activePatchKey = Symbol.for("pi-calm:tool-row:v5");
   const notificationPatchKey = Symbol.for("pi-calm:extension-notify:v1");
   const originalNotification = InteractiveMode.prototype.showExtensionNotify;
+  AssistantMessageComponent.prototype.render = () => ["stock assistant row"];
   ToolExecutionComponent.prototype.render = () => STOCK_TOOL_LINES;
 
   try {
@@ -41,6 +44,10 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
     };
 
     extension.default(pi);
+    const installedAssistantRender = AssistantMessageComponent.prototype.render;
+    const transientErrors = await import(new URL("../lib/transient-errors.ts", import.meta.url).href);
+    transientErrors.installCalmTransientErrorLayout();
+    assert.equal(AssistantMessageComponent.prototype.render, installedAssistantRender);
     const installedNotification = InteractiveMode.prototype.showExtensionNotify;
     const notifications = await import(new URL("../lib/notifications.ts", import.meta.url).href);
     notifications.installCalmNotificationLayout();
@@ -56,7 +63,7 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
     assert.ok(handlers.has("agent_end"));
     assert.ok(handlers.has("tool_execution_start"));
     assert.ok(handlers.has("tool_execution_end"));
-    assert.equal(handlers.has("agent_settled"), false);
+    assert.ok(handlers.has("agent_settled"));
 
     const calls = [];
     let expanded = true;
@@ -79,7 +86,11 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
     };
     const notify = (message, type = "info") =>
       InteractiveMode.prototype.showExtensionNotify.call(notificationHost, message, type);
-    const ctx = { ui };
+    const branchEntries = [];
+    const ctx = {
+      sessionManager: { getBranch: () => branchEntries },
+      ui,
+    };
     const fire = async (event, payload = {}) => {
       for (const handler of handlers.get(event) ?? []) {
         await handler({ type: event, ...payload }, ctx);
@@ -98,6 +109,75 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
       ["info", "Observational memory: 4 observations recorded"],
       ["warning", "Observational memory: observer running on a chunk"],
     ]);
+    const transientError = {
+      role: "assistant",
+      content: [],
+      stopReason: "error",
+      errorMessage: "OpenAI Responses stream ended before a terminal response event",
+      timestamp: 1,
+    };
+    const transientErrorRow = Object.assign(Object.create(AssistantMessageComponent.prototype), {
+      lastMessage: transientError,
+    });
+    assert.deepEqual(transientErrorRow.render(80), ["stock assistant row"]);
+    await fire("agent_end", { messages: [transientError] });
+    assert.deepEqual(transientErrorRow.render(80), []);
+    await fire("agent_end", {
+      messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "stop", timestamp: 2 }],
+    });
+    await fire("agent_settled");
+    assert.deepEqual(transientErrorRow.render(80), []);
+
+    const finalError = {
+      ...transientError,
+      errorMessage: "Request aborted\n\n[capped-retry-stall] provider returned error",
+      timestamp: 3,
+    };
+    const finalErrorRow = Object.assign(Object.create(AssistantMessageComponent.prototype), {
+      lastMessage: finalError,
+    });
+    await fire("agent_end", { messages: [finalError] });
+    assert.deepEqual(finalErrorRow.render(80), []);
+    await fire("agent_settled");
+    assert.deepEqual(finalErrorRow.render(80), ["stock assistant row"]);
+
+    const restoredError = { ...transientError, timestamp: 4 };
+    const unretriedError = { ...transientError, timestamp: 5 };
+    branchEntries.push(
+      {
+        type: "message",
+        id: "error-1",
+        parentId: null,
+        timestamp: "2026-08-05T00:00:00.000Z",
+        message: restoredError,
+      },
+      {
+        type: "custom_message",
+        id: "retry-1",
+        parentId: "error-1",
+        timestamp: "2026-08-05T00:00:01.000Z",
+        customType: "capped-retry",
+        content: "retry",
+        display: false,
+      },
+      {
+        type: "message",
+        id: "error-2",
+        parentId: "retry-1",
+        timestamp: "2026-08-05T00:00:02.000Z",
+        message: unretriedError,
+      },
+    );
+    const restoredErrorRow = Object.assign(Object.create(AssistantMessageComponent.prototype), {
+      lastMessage: restoredError,
+    });
+    const unretriedErrorRow = Object.assign(Object.create(AssistantMessageComponent.prototype), {
+      lastMessage: unretriedError,
+    });
+    await fire("session_start");
+    assert.deepEqual(restoredErrorRow.render(80), []);
+    assert.deepEqual(unretriedErrorRow.render(80), ["stock assistant row"]);
+
     const customToolRow = Object.assign(Object.create(ToolExecutionComponent.prototype), {
       toolName: "fetch_content",
       toolDefinition: {},
@@ -140,6 +220,7 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
     assert.equal(expanded, true);
     assert.ok(calls.some(([name, value]) => name === "indicator" && value === undefined));
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
+    assert.deepEqual(transientErrorRow.render(80), ["stock assistant row"]);
     assert.deepEqual(customToolRow.render(80), STOCK_TOOL_LINES);
     notificationCalls.length = 0;
     notify("Observational memory: observer running on ~1-token chunk (of 1 accumulated)");
@@ -155,8 +236,10 @@ test("Calm uses one dynamic working row and hides presentation noise", { concurr
     assert.ok(calls.some(([name, value]) => name === "message" && value === undefined));
     assert.equal(calls.some(([name]) => name === "widget"), false);
   } finally {
+    AssistantMessageComponent.prototype.render = originalAssistantRender;
     ToolExecutionComponent.prototype.render = originalToolRender;
     InteractiveMode.prototype.showExtensionNotify = originalNotification;
+    delete globalThis[transientErrorPatchKey];
     delete globalThis[activePatchKey];
     delete globalThis[notificationPatchKey];
     rmSync(agentDir, { recursive: true, force: true });
